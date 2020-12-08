@@ -26,16 +26,33 @@ def CLM_Lambada_ARM(model, tokenizer, stop_words):
             # Take highest predicted token not found in stopwords list
             non_sw_found = False
             while not non_sw_found:
-                nt_idx = torch.argmax(filtered_next_token_logits)
-                next_token = tokenizer.decode(nt_idx).strip().lower()
-                if next_token not in stop_words:
+                wp_idx = torch.argmax(filtered_next_token_logits)
+                word_prediction = tokenizer.decode(wp_idx).strip().lower()
+                if word_prediction not in stop_words:
                     non_sw_found = True
                 else:
-                    filtered_next_token_logits[0][nt_idx] = float('-Inf')
+                    filtered_next_token_logits[0][wp_idx] = float('-Inf')
 
-            if target_token == next_token:
+            if target_token == word_prediction:
                 corrects += 1
-            print('{}: Target token: {}\n Predicted token: {}'.format(idx, target_token, next_token))
+            while target_token.startswith(word_prediction) and target_token != word_prediction:
+                tmp_seq = sequence + ' ' + word_prediction
+                input_ids = tokenizer.encode(tmp_seq, return_tensors='pt')
+                next_token_logits = model(input_ids).logits[:, -1, :]
+                filtered_next_token_logits = top_k_top_p_filtering(next_token_logits, top_k=50, top_p=1.0)
+                non_sw_found = False
+                while not non_sw_found:
+                    wp_idx = torch.argmax(filtered_next_token_logits)
+                    wp = tokenizer.decode(wp_idx).strip().lower()
+                    if wp not in stop_words:
+                        non_sw_found = True
+                    else:
+                        filtered_next_token_logits[0][wp_idx] = float('-Inf')
+                word_prediction = word_prediction + wp
+
+            if word_prediction == target_token:
+                print('A match!')
+            print('{}: Target token: {}\n Predicted token: {}'.format(idx, target_token, word_prediction))
             if idx % 100 == 0:
                 print(idx)
     print('Total time for testing on {} samples: {}'.format(sample_count, elapsed_time(time() - start)))
@@ -45,12 +62,11 @@ def CLM_Lambada_ARM(model, tokenizer, stop_words):
 if __name__ == '__main__':
     sw = stopwords.words('english')
     sw.append('.'), sw.append(','), sw.append("'"), sw.append("''"), sw.append('"'), sw.append('!'), sw.append('?')
-    sw.append(''), sw.append('``'), sw.append('*'), sw.append('...')
+    sw.append(''), sw.append('``'), sw.append('."'), sw.append('*'), sw.append('...'), sw.append(':'), sw.append(';')
+    sw.append("'s"), sw.append('`')
 
     num_params = []
     accuracies = []
-    # accuracies = [0.19, .25, .33, .43, .76]
-    # num_params = [117e6, 345e6, 774e6, 1558e6, 175e9]
     model_names = ['GPT2', 'GPT2-Medium', 'GPT2-Large', 'GPT2-XL', 'GPT-3']
 
     gpt2_model = GPT2LMHeadModel.from_pretrained('gpt2')
